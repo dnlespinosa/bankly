@@ -1,69 +1,56 @@
-/** Middleware for handling req authorization for routes. */
+/** Auth-related routes. */
 
-const jwt = require('jsonwebtoken');
-const { SECRET_KEY } = require('../config');
+const User = require('../models/user');
+const express = require('express');
+const ExpressError = require('../helpers/expressError');
+const router = express.Router();
+const createTokenForUser = require('../helpers/createToken');
 
-/** Authorization Middleware: Requires user is logged in. */
 
-function requireLogin(req, res, next) {
+/** Register user; return token.
+ *
+ *  Accepts {username, first_name, last_name, email, phone, password}.
+ *
+ *  Returns {token: jwt-token-string}.
+ *
+ */
+
+
+router.post('/register', async function(req, res, next) {
   try {
-    if (req.curr_username) {
-      return next();
-    } else {
-      return next({ status: 401, message: 'Unauthorized' });
-    }
+    const { username, password, first_name, last_name, email, phone } = req.body;
+    let user = await User.register({username, password, first_name, last_name, email, phone});
+    const token = createTokenForUser(username, user.admin);
+    return res.status(201).json({ token });
   } catch (err) {
-    console.log('yup')
     return next(err);
   }
-}
+}); // end
 
-/** Authorization Middleware: Requires user is logged in and is staff. */
-
-function requireAdmin(req, res, next) {
+/** Log in user; return token.
+ *
+ *  Accepts {username, password}.
+ *
+ *  Returns {token: jwt-token-string}.
+ *
+ *  If incorrect username/password given, should raise 401.
+ *
+ */
+// BUG FIX 1
+router.post('/login', async function(req, res, next) {
   try {
-    if (req.curr_admin) {
-      return next();
+    const { username, password, } = req.body;
+    // added await to User.authenticate
+    let user = await User.authenticate(username, password);
+    if (user) {
+      const token = createTokenForUser(user.username, user.admin);
+      return res.json({ token });
     } else {
-      return next({ status: 401, message: 'UnauthorizedYup?' });
-    }
-  } catch (err) {
-    console.log('requireAdmin')
-    return next(err);
-  }
-}
-
-/** Authentication Middleware: put user on request
- *
- * If there is a token, verify it, get payload (username/admin),
- * and store the username/admin on the request, so other middleware/routes
- * can use it.
- *
- * It's fine if there's no token---if not, don't set anything on the
- * request.
- *
- * If the token is invalid, an error will be raised.
- *
- **/
-
-function authUser(req, res, next) {
-  try {
-    const token = req.body._token || req.query._token;
-    if (token) {
-      let payload = jwt.verify(token, SECRET_KEY);
-      req.curr_username = payload.username;
-      req.curr_admin = payload.admin;
       return next()
     }
-    return next();
   } catch (err) {
-    err.status = 401;
     return next(err);
   }
-} 
+}); // end
 
-module.exports = {
-  requireLogin,
-  requireAdmin,
-  authUser
-};
+module.exports = router;
